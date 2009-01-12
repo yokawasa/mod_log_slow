@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * Copyright 2008 Yoichi Kawasaki <yokawasa@gmail.com>
+ * Copyright 2008,2009 Yoichi Kawasaki <yokawasa@gmail.com>
  */
 
 #include "httpd.h"
@@ -21,11 +21,14 @@
 #include "http_protocol.h"
 #include "http_log.h"      // ap_log_rerror
 #include "ap_config.h"
+#include "apr_strings.h"
+#include "apr_atomic.h"
 #include <sys/time.h>
 #include <sys/resource.h>
 
-#define MAX_LOG_SLOW_REQUEST 1000*30  //30sec
-#define MIN_LOG_SLOW_REQUEST 0
+#define MAX_LOG_SLOW_REQUEST     (1000*30)  //30sec
+#define MIN_LOG_SLOW_REQUEST     (0)
+#define DEFAULT_LOG_SLOW_REQUEST (1000*1)   //1sec
 
 module AP_MODULE_DECLARE_DATA log_slow_module;
 
@@ -35,17 +38,20 @@ typedef struct st_log_slow_usage {
 } log_slow_usage_t;
 
 typedef struct st_log_slow_conf {
-    int enabled;            /* engine is set to be on(1) or off(0) */
+    int enabled;             /* engine is set to be on(1) or off(0) */
     long long_request_time;  /* log resource consumption only on slow request in msec */
-} log_slow_conf_t;
+    const char *filename;    /* filename of slow log */
+    apr_file_t *fd;
+} log_slow_config;
 
+static apr_uint32_t next_id;
 
 static log_slow_usage_t usage_start;
 
 static const char *set_enabled(cmd_parms *parms, void *mconfig, int arg)
 {
-    log_slow_conf_t *conf =
-            ap_get_module_config(parms->server->module_config, &log_slow_module);
+    log_slow_config *conf =
+        ap_get_module_config(parms->server->module_config, &log_slow_module);
     if (conf == NULL){
         return "LogSlowModule: Failed to retrieve configuration for mod_log_slow";
     }
@@ -53,7 +59,7 @@ static const char *set_enabled(cmd_parms *parms, void *mconfig, int arg)
     return NULL;
 }
 
-static const char *set_log_slow_long_request_time(cmd_parms *parms,
+static const char *set_long_request_time(cmd_parms *parms,
                                     void *mconfig, const char *arg)
 {
     long val;
@@ -72,8 +78,8 @@ static const char *set_log_slow_long_request_time(cmd_parms *parms,
         return "LogSlowModule: Wrong param: LogSlowLongRequestTime";
     }
 
-    log_slow_conf_t *conf =
-            ap_get_module_config(parms->server->module_config, &log_slow_module);
+    log_slow_config *conf =
+        ap_get_module_config(parms->server->module_config, &log_slow_module);
     if (conf == NULL){
         return "LogSlowModule: Failed to retrieve configuration for mod_log_slow";
     }
@@ -81,27 +87,40 @@ static const char *set_log_slow_long_request_time(cmd_parms *parms,
     return NULL;
 }
 
-void mod_log_slow_set_default(log_slow_conf_t *conf) {
+static const char *set_filename(cmd_parms *parms,
+                                    void *mconfig, const char *arg)
+{
+    log_slow_config *conf =
+        ap_get_module_config(parms->server->module_config, &log_slow_module);
+    if (conf == NULL){
+        return "LogSlowModule: Failed to retrieve configuration for mod_log_slow";
+    }
+    conf->filename = (char*)arg;
+    return NULL;
+}
+
+void set_default(log_slow_config *conf) {
     if (conf) {
-        conf->enabled = 1;
-        conf->long_request_time = 0;
+        conf->enabled = 0;
+        conf->long_request_time = DEFAULT_LOG_SLOW_REQUEST;
+        conf->filename= NULL;
+        conf->fd =  NULL;
     }
 }
 
 static void* log_slow_create_server_config(apr_pool_t* p, server_rec* s)
 {
-    ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, s, "log_slow_create_server_config");
-    log_slow_conf_t* conf = apr_pcalloc(p, sizeof(log_slow_conf_t));
-    mod_log_slow_set_default(conf);
+    log_slow_config* conf = apr_pcalloc(p, sizeof(log_slow_config));
+    set_default(conf);
     return conf;
 }
 
-static double log_slow_time_elapsed( struct timeval *before, struct timeval *after )
+static double get_time_elapsed( struct timeval *before, struct timeval *after )
 {
     double a,b;
 
     if ( !before || !after || !timerisset(before) || !timerisset(after) ) {
-        fprintf(stderr, "[%d] NULL time handed to log_slow_time_elapsed",
+        fprintf(stderr, "[%d] NULL time handed to get_time_elapsed",
             (int)getpid());
         return 0;
     }
@@ -110,10 +129,10 @@ static double log_slow_time_elapsed( struct timeval *before, struct timeval *aft
     return (a-b);
 }
 
-static void log_slow_snapshot( log_slow_usage_t *u )
+static void set_snapshot( log_slow_usage_t *u )
 {
     if (!u) {
-        fprintf(stderr, "[%d] NULL log_slow_usage_t handed to log_slow_snapshot",
+        fprintf(stderr, "[%d] NULL log_slow_usage_t handed to set_snapshot",
             (int)getpid());
         return;
     }
@@ -121,12 +140,12 @@ static void log_slow_snapshot( log_slow_usage_t *u )
     gettimeofday(&(u->tv), NULL);
 }
 
-static void log_slow_show_snapshot(request_rec *r,
+static void show_snapshot(request_rec *r,
                             log_slow_usage_t *u, const char* name )
 {
     char* n;
     if (!r ||!u ) {
-        fprintf(stderr,"[%d] NULL request_rec or log_slow_usage_t handed to log_slow_show_snapshot",
+        fprintf(stderr,"[%d] NULL request_rec or log_slow_usage_t handed to show_snapshot",
             (int)getpid());
         return;
     }
@@ -143,14 +162,60 @@ static void log_slow_show_snapshot(request_rec *r,
         u->ru.ru_stime.tv_sec, u->ru.ru_stime.tv_usec);
 }
 
+/* code from mod_log_forensic, and modified a bit */
+static int open_log(server_rec *s, apr_pool_t *p)
+{
+    log_slow_config *conf = ap_get_module_config(s->module_config, &log_slow_module);
+
+    if (!conf->filename || conf->fd)
+        return 1;
+
+    if (*conf->filename == '|') {
+        piped_log *pl;
+        const char *pname = ap_server_root_relative(p, conf->filename + 1);
+
+        pl = ap_open_piped_log(p, pname);
+        if (pl == NULL) {
+            ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
+                         "couldn't spawn slow log pipe %s", conf->filename);
+            return 0;
+        }
+        conf->fd = ap_piped_log_write_fd(pl);
+    }
+    else {
+        const char *fname = ap_server_root_relative(p, conf->filename);
+        apr_status_t rv;
+
+        if ((rv = apr_file_open(&conf->fd, fname,
+                                APR_WRITE | APR_APPEND | APR_CREATE,
+                                APR_OS_DEFAULT, p)) != APR_SUCCESS) {
+            ap_log_error(APLOG_MARK, APLOG_ERR, rv, s,
+                         "could not open slow log file %s.", fname);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int log_slow_open_logs(apr_pool_t *pc, apr_pool_t *p, apr_pool_t *pt, server_rec *s)
+{
+    for ( ; s ; s = s->next) {
+        if (!open_log(s, p)) {
+            return HTTP_INTERNAL_SERVER_ERROR;
+        }
+    }
+
+    return OK;
+}
+
 static int log_slow_post_read_request(request_rec *r)
 {
-    log_slow_conf_t *conf =
-          (log_slow_conf_t *) ap_get_module_config(r->server->module_config, &log_slow_module);
+    log_slow_config *conf =
+         ap_get_module_config(r->server->module_config, &log_slow_module);
     if (conf && conf->enabled ) {
-        log_slow_snapshot(&usage_start);
+        set_snapshot(&usage_start);
 #ifdef LOGRC_DEBUG
-        log_slow_show_snapshot(r,&usage_start,"START");
+        show_snapshot(r,&usage_start,"START");
 #endif
     }
     return OK;
@@ -158,56 +223,96 @@ static int log_slow_post_read_request(request_rec *r)
 
 static int log_slow_log_transaction(request_rec *r)
 {
-    log_slow_conf_t *conf;
+    log_slow_config *conf;
     double time_elapsed,utime_elapsed,stime_elapsed;
-    conf = (log_slow_conf_t *) ap_get_module_config(r->server->module_config, &log_slow_module);
+    char* logbuf;
+    char *id;
+    char *elapsed_s;
+    apr_size_t logsize;
+    apr_status_t rv;
+    conf = ap_get_module_config(r->server->module_config, &log_slow_module);
 
-    if (conf && conf->enabled ) {
-        log_slow_usage_t usage_end;
-        log_slow_snapshot(&usage_end);
-#ifdef LOGRC_DEBUG
-        log_slow_show_snapshot(r, &usage_end, "END");
-#endif
-        time_elapsed =
-            log_slow_time_elapsed(&(usage_start.tv), &(usage_end.tv));
-
-        if ( conf->long_request_time > (long)(time_elapsed*1000.000) ) {
-            return OK;
-        }
-        utime_elapsed =
-            log_slow_time_elapsed(&(usage_start.ru.ru_utime),&(usage_end.ru.ru_utime)),
-        stime_elapsed =
-            log_slow_time_elapsed(&(usage_start.ru.ru_stime),&(usage_end.ru.ru_stime)),
-
-        ap_log_rerror(APLOG_MARK, APLOG_NOTICE, 0, r,
-            "SLOWLOG[%d] - elapsed: %.6lf "
-            "CPU: %.6lf(usr)/%.6lf(sys) "
-            "- hostname: %s uri: %s",
-            (int)getpid(), time_elapsed, utime_elapsed, stime_elapsed,
-            r->hostname, r->uri
-           );
+    if (!conf || !conf->enabled ) {
+        return DECLINED;
     }
+    if (!conf->fd || r->prev) {
+        return DECLINED;
+    }
+
+    log_slow_usage_t usage_end;
+    set_snapshot(&usage_end);
+#ifdef LOGRC_DEBUG
+    show_snapshot(r, &usage_end, "END");
+#endif
+    time_elapsed =
+        get_time_elapsed(&(usage_start.tv), &(usage_end.tv));
+
+    if ( conf->long_request_time > (long)(time_elapsed*1000.000) ) {
+        return DECLINED;
+    }
+    /* code from mod_log_forensic, and modified a bit */
+    if (!(id = (char*)apr_table_get(r->subprocess_env, "UNIQUE_ID"))) {
+        /* we make the assumption that we can't go through all the PIDs in
+        under 1 second */
+        id = apr_psprintf(r->pool, "%x:%lx:%x", getpid(), time(NULL),
+                          apr_atomic_inc32(&next_id));
+    }
+
+    utime_elapsed =
+        get_time_elapsed(&(usage_start.ru.ru_utime),&(usage_end.ru.ru_utime)),
+    stime_elapsed =
+        get_time_elapsed(&(usage_start.ru.ru_stime),&(usage_end.ru.ru_stime)),
+
+    elapsed_s = (char*)apr_psprintf(r->pool, "%.2lf", time_elapsed);
+
+    logbuf = (char*)apr_psprintf(r->pool,
+        "%s @ %d "
+        "elapsed: %.2lf cpu: %.2lf(usr)/%.2lf(sys) "
+        "pid: %d ip: %s host: %s uri: %s"
+        "\n",
+        id, time(NULL),
+        time_elapsed, utime_elapsed, stime_elapsed,
+        (int)getpid(), r->connection->remote_ip, r->hostname, r->uri
+       );
+
+    logsize = strlen(logbuf);
+    rv = apr_file_write(conf->fd, logbuf, &logsize);
+    if (rv != APR_SUCCESS ) {
+        ap_log_error(APLOG_MARK, APLOG_ERR, rv, r->server,
+            "couldn't write slow log %s", conf->filename);
+        return DECLINED;
+    }
+
+    /* logslow id and time in apache notes */
+    apr_table_setn(r->notes, "logslow-id", id);
+    apr_table_setn(r->notes, "logslow-time", elapsed_s);
+
     return OK;
 }
 
 static void log_slow_register_hooks(apr_pool_t *p)
 {
+    static const char * const asz_succ[]={ "mod_log_config.c", NULL };
+    ap_hook_open_logs(log_slow_open_logs,NULL,NULL,APR_HOOK_MIDDLE);
     ap_hook_post_read_request(log_slow_post_read_request,NULL,NULL,APR_HOOK_MIDDLE);
-    ap_hook_log_transaction(log_slow_log_transaction, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_log_transaction(log_slow_log_transaction, NULL, asz_succ, APR_HOOK_MIDDLE);
 }
 
 static const command_rec log_slow_cmds[] =
 {
     AP_INIT_FLAG("LogSlowEnabled", set_enabled, NULL, RSRC_CONF,
             "set \"On\" to enable log_slow, \"Off\" to disable"),
-    AP_INIT_TAKE1("LogSlowLongRequestTime", set_log_slow_long_request_time, NULL, RSRC_CONF,
+    AP_INIT_TAKE1("LogSlowLongRequestTime", set_long_request_time, NULL, RSRC_CONF,
             "set the limit of request handling time in millisecond. Default \"0\""),
+    AP_INIT_TAKE1("LogSlowFileName", set_filename, NULL, RSRC_CONF,
+            "set the filename of the slow log"),
+
     {NULL}
 };
 
 /* Dispatch list for API hooks */
 module AP_MODULE_DECLARE_DATA log_slow_module = {
-    STANDARD20_MODULE_STUFF, 
+    STANDARD20_MODULE_STUFF,
     NULL,                           /* create per-dir    config structures */
     NULL,                           /* merge  per-dir    config structures */
     log_slow_create_server_config,  /* create per-server config structures */
