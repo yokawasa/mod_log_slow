@@ -1,0 +1,6 @@
+version 1.0.1 - Jan 12, 2009
+* add LogSlowFileName Directive
+* set logslow-time in apache note
+
+version 1.0.0 - Dec 23, 2008
+* Initial Release
