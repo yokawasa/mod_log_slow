@@ -1,0 +1,168 @@
+/*
+ * README
+ * mod_log_slow.c - Logging Slow Request Module for Apache2.X
+ */
+
+ _ __ ___   ___   __| |   | | ___   __ _     ___| | _____      __
+| '_ ` _ \ / _ \ / _` |   | |/ _ \ / _` |   / __| |/ _ \ \ /\ / /
+| | | | | | (_) | (_| |   | | (_) | (_| |   \__ \ | (_) \ V  V /
+|_| |_| |_|\___/ \__,_|___|_|\___/ \__, |___|___/_|\___/ \_/\_/
+                     |_____|       |___/_____|
+
+
+====================================================================
+* Introduction
+====================================================================
+
+mod_log_slow is Apache module to provide measures of the time period
+used for handling each request by the current process. Logging is done
+after processing a request if the request takes more than certain
+period of time that you specifiy.
+The idea of this module comes from MySQL's slow-query-log, and its
+logging logic is partially based on mod_log_forensic.
+
+
+====================================================================
+* Download
+====================================================================
+
+http://code.google.com/p/modlogslow/downloads/list
+
+
+====================================================================
+* Build and Install
+====================================================================
+
+1) extract files from an archive
+tar zxf mod_log_slow-<VERSION>.tar.gz
+cd mod_log_slow
+
+2) open Makefile and modify ap_basedir variable
+vi Makefile
+ ap_basedir=/PATH-TO-APACHE-BASE
+
+3) make and install
+make
+sudo make install
+
+
+====================================================================
+* Configuration Directives
+====================================================================
+
+All the directives below may be specified as per-server configuration.
+
+o LogSlowEnable
+
+    Description: set "On" to enable log_slow, "Off" to disable.
+           Default "Off"
+    Syntax: LogSlowEnable On/Off
+    Context: server config, virtual host
+    Status: Extension
+    Module: mod_log_slow
+
+o LogSlowLongRequestTime
+
+    Description: Set the limit of request handling time in millisecond.
+           Default "1000". Logging is done after processing a request
+           if the request takes more than LogSlowLongRequestTime.
+    Syntax: LogSlowLongRequestTime number(millisecond)
+    Context: server config, virtual host
+    Status: Extension
+    Module: mod_log_slow
+
+o LogSlowFileName
+
+    Description: Set the filename of the slow log. The SlowLogFileName
+           directive is used to log requests info that takes more than
+           the time period specified in LogSlowLongRequestTime directive.
+    Syntax: LogSlowFileName filename or pipe
+    Context: server config, virtual host
+    Status: Extension
+    Module: mod_log_slow
+
+    [note]
+    In case of using pipe("|"), followed by the path to a program to receive the log information on its standard input.
+
+
+====================================================================
+* Logging Format
+====================================================================
+
+Slow log entry is written to the file that specified in LogSlowFileName
+directive, and the logging is made only after the request processing
+that takes more than the time period specified in LogSlowLongRequestTime
+directive.
+
+1) Unique ID
+
+mod_log_slow assigns a unique ID for each log entry, and the ID is
+added to the log string. If you're using mod_unique_id, its generated
+ID will be used as the unique ID.
+
+2) Slow Log Format
+
+<Unique ID> @ <time> elapsed: <elapsed time> cpu: <cpu usrtime>(usr)/<cpu systime>(sys) pic: <PID> ip: <REMOTE_IP> host: <HOSTNAME> URI: <URI>
+
+o <Unique ID>
+    Description: the unique ID assigned for each log entry.
+o <time> (unixtime)
+    Description: the time to occur the log entry.
+o <elapsed time> (sec)
+    Description: the time took for the request processing.
+o <cpu usrtime> (sec)
+    Description: cpu user time used for the request processing.
+o <cpu systime> (sec)
+    Description: cpu sys time used for the request processing.
+o <PID>
+    Description: the process ID of apache child process.
+o <REMOTE_IP>
+    Description: the request's remote ip address.
+o <HOSTNAME>
+    Description: the request's hostname.
+o <URI>
+    Description: the request uri.
+
+ex.
+11e2:496b45e8:0 @ 1231767016 elapsed: 0.51 cpu: 0.00(usr)/0.00(sys) pid: 4578 ip: 10.0.2.2 host: localhost uri: /wiki/index.php
+
+3) Apache Note Info and CustomLog Format
+
+mod_log_slow adds 2 records below in apache note when the request
+processing time is slow enough for the slow logging to be make.
+
+o Unique ID
+    Description: the unique ID assigned for each log entry.
+    Name: "logslow-id"
+o Elapsed time
+    Description: the time took for the request processing.
+    Name: "logslow-time"
+
+Therefore, you can add the unique ID and the elapsed time info to
+the "CustomLog" by adding the %{logslow-id}n, %{logslow-time}n string
+to log format string of CustomLog directive.
+
+ex.
+CustomLog logs/clicklog "%h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" \"%{logslow-id}n\" \"%{logslow-time}n\""
+
+
+====================================================================
+* Sample Configuration
+====================================================================
+
+1) load module
+LoadModule log_slow_module modules/mod_log_slow.so
+
+2) add directives below
+LogSlowEnabled On
+LogSlowLongRequestTime 100
+LogSlowFileName /path-to-log/slow_log
+
+see also: sample.conf
+
+
+====================================================================
+* Authors
+====================================================================
+Yoichi Kawasaki <yokawasa@gmail.com>
+
