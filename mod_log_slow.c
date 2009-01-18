@@ -1,6 +1,9 @@
 /*
  * mod_log_slow.c - Logging Slow Request Module for Apache2.X
  *
+ * Copyright (C) 2008-2009 Yoichi Kawasaki All rights reserved.
+ * www.yk55.com
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -12,8 +15,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * Copyright 2008,2009 Yoichi Kawasaki <yokawasa@gmail.com>
  */
 
 #include "httpd.h"
@@ -52,7 +53,7 @@ static const char *set_enabled(cmd_parms *parms, void *mconfig, int arg)
 {
     log_slow_config *conf =
         ap_get_module_config(parms->server->module_config, &log_slow_module);
-    if (conf == NULL){
+    if (!conf){
         return "LogSlowModule: Failed to retrieve configuration for mod_log_slow";
     }
     conf->enabled = arg;
@@ -80,7 +81,7 @@ static const char *set_long_request_time(cmd_parms *parms,
 
     log_slow_config *conf =
         ap_get_module_config(parms->server->module_config, &log_slow_module);
-    if (conf == NULL){
+    if (!conf){
         return "LogSlowModule: Failed to retrieve configuration for mod_log_slow";
     }
     conf->long_request_time = val;
@@ -92,7 +93,7 @@ static const char *set_filename(cmd_parms *parms,
 {
     log_slow_config *conf =
         ap_get_module_config(parms->server->module_config, &log_slow_module);
-    if (conf == NULL){
+    if (!conf){
         return "LogSlowModule: Failed to retrieve configuration for mod_log_slow";
     }
     conf->filename = (char*)arg;
@@ -110,8 +111,24 @@ void set_default(log_slow_config *conf) {
 
 static void* log_slow_create_server_config(apr_pool_t* p, server_rec* s)
 {
-    log_slow_config* conf = apr_pcalloc(p, sizeof(log_slow_config));
+    log_slow_config* conf = apr_pcalloc(p, sizeof(*conf) );
     set_default(conf);
+    return conf;
+}
+
+static void *log_slow_merge_server_config(apr_pool_t *p,
+                            void *parent_conf, void *new_conf)
+{
+    log_slow_config* conf = (log_slow_config *)apr_pcalloc(p, sizeof *conf);
+    log_slow_config* pc = (log_slow_config *)parent_conf;
+    log_slow_config* nc = (log_slow_config *)new_conf;
+
+    conf->enabled = (nc->enabled ? nc->enabled : pc->enabled);
+    conf->long_request_time = (nc->long_request_time!=DEFAULT_LOG_SLOW_REQUEST
+                    ? nc->long_request_time : pc->long_request_time);
+    conf->filename = apr_pstrdup(p, nc->filename ? nc->filename : pc->filename);
+    conf->fd = NULL;
+
     return conf;
 }
 
@@ -167,7 +184,7 @@ static int open_log(server_rec *s, apr_pool_t *p)
 {
     log_slow_config *conf = ap_get_module_config(s->module_config, &log_slow_module);
 
-    if (!conf->filename || conf->fd)
+    if (!conf || !conf->filename || conf->fd)
         return 1;
 
     if (*conf->filename == '|') {
@@ -204,7 +221,6 @@ static int log_slow_open_logs(apr_pool_t *pc, apr_pool_t *p, apr_pool_t *pt, ser
             return HTTP_INTERNAL_SERVER_ERROR;
         }
     }
-
     return OK;
 }
 
@@ -212,12 +228,15 @@ static int log_slow_post_read_request(request_rec *r)
 {
     log_slow_config *conf =
          ap_get_module_config(r->server->module_config, &log_slow_module);
-    if (conf && conf->enabled ) {
-        set_snapshot(&usage_start);
-#ifdef LOGRC_DEBUG
-        show_snapshot(r,&usage_start,"START");
-#endif
+
+    if (!conf || !conf->enabled ) {
+        return DECLINED;
     }
+
+    set_snapshot(&usage_start);
+#ifdef LOGRC_DEBUG
+    show_snapshot(r,&usage_start,"START");
+#endif
     return OK;
 }
 
@@ -316,8 +335,11 @@ module AP_MODULE_DECLARE_DATA log_slow_module = {
     NULL,                           /* create per-dir    config structures */
     NULL,                           /* merge  per-dir    config structures */
     log_slow_create_server_config,  /* create per-server config structures */
-    NULL,                           /* merge  per-server config structures */
+    log_slow_merge_server_config,   /* merge  per-server config structures */
     log_slow_cmds,                  /* table of config file commands       */
     log_slow_register_hooks         /* register hooks                      */
 };
 
+/*
+ * vim:ts=4 et
+ */
