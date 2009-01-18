@@ -1,3 +1,7 @@
+version 1.0.2 - Jan 17, 2009
+* add a bit more error handling
+* add log_slow_merge_server_config
+
 version 1.0.1 - Jan 12, 2009
 * add LogSlowFileName Directive
 * set logslow-time in apache note
