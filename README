@@ -129,8 +129,9 @@ ex.
 
 3) Apache Note Info and CustomLog Format
 
-mod_log_slow adds 2 records below in apache note when the request
-processing time is slow enough for the slow logging to be make.
+mod_log_slow adds 2 records below in apache request_rec's 'notes'
+table when the request processing time is slow enough for the slow
+logging to be make.
 
 o Unique ID
     Description: the unique ID assigned for each log entry.
