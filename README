@@ -35,8 +35,8 @@ http://code.google.com/p/modlogslow/downloads/list
 ====================================================================
 
 1) extract files from an archive
-tar zxf mod_log_slow-<VERSION>.tar.gz
-cd mod_log_slow
+tar zxf modlogslow-<VERSION>.tar.gz
+cd modlogslow-<VERSION>
 
 2) open Makefile and modify ap_basedir variable
 vi Makefile
