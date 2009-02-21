@@ -53,11 +53,11 @@ sudo make install
 
 All the directives below may be specified as per-server configuration.
 
-o LogSlowEnable
+o LogSlowEnabled
 
     Description: set "On" to enable log_slow, "Off" to disable.
            Default "Off"
-    Syntax: LogSlowEnable On/Off
+    Syntax: LogSlowEnabled On/Off
     Context: server config, virtual host
     Status: Extension
     Module: mod_log_slow
