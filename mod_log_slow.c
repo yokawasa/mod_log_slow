@@ -137,8 +137,12 @@ static double get_time_elapsed( struct timeval *before, struct timeval *after )
     double a,b;
 
     if ( !before || !after || !timerisset(before) || !timerisset(after) ) {
+#ifdef LOGRC_DEBUG
+        // this error messages may be output in every apache stop and start,
+        // so put this only in debug mode
         fprintf(stderr, "[%d] NULL time handed to get_time_elapsed",
             (int)getpid());
+#endif
         return 0;
     }
     b = before->tv_sec + (double)before->tv_usec*1e-6;
@@ -149,8 +153,10 @@ static double get_time_elapsed( struct timeval *before, struct timeval *after )
 static void set_snapshot( log_slow_usage_t *u )
 {
     if (!u) {
+#ifdef LOGRC_DEBUG
         fprintf(stderr, "[%d] NULL log_slow_usage_t handed to set_snapshot",
             (int)getpid());
+#endif
         return;
     }
     getrusage(RUSAGE_SELF, &(u->ru));
@@ -162,8 +168,10 @@ static void show_snapshot(request_rec *r,
 {
     char* n;
     if (!r ||!u ) {
+#ifdef LOGRC_DEBUG
         fprintf(stderr,"[%d] NULL request_rec or log_slow_usage_t handed to show_snapshot",
             (int)getpid());
+#endif
         return;
     }
     if ( name != 0 && *name != 0 ) {
