@@ -1,6 +1,6 @@
 version 1.0.3 - Feb 22, 2009
 * modified not to output error handling stderr by default
-* fixup type on README
+* fixup typo on README
 * add .deps file which is necessary for compiling
 
 version 1.0.2 - Jan 17, 2009
