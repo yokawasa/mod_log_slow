@@ -1,3 +1,6 @@
+version 1.0.4 - Feb 22, 2009
+* add "EOF" (\n) on fprintf format of debug message
+
 version 1.0.3 - Feb 22, 2009
 * modified not to output error handling stderr by default
 * fixup typo on README
