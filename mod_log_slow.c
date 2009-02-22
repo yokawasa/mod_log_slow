@@ -140,7 +140,7 @@ static double get_time_elapsed( struct timeval *before, struct timeval *after )
 #ifdef LOGRC_DEBUG
         // this error messages may be output in every apache stop and start,
         // so put this only in debug mode
-        fprintf(stderr, "[%d] NULL time handed to get_time_elapsed",
+        fprintf(stderr, "[%d] NULL time handed to get_time_elapsed\n",
             (int)getpid());
 #endif
         return 0;
@@ -154,7 +154,7 @@ static void set_snapshot( log_slow_usage_t *u )
 {
     if (!u) {
 #ifdef LOGRC_DEBUG
-        fprintf(stderr, "[%d] NULL log_slow_usage_t handed to set_snapshot",
+        fprintf(stderr, "[%d] NULL log_slow_usage_t handed to set_snapshot\n",
             (int)getpid());
 #endif
         return;
@@ -169,7 +169,7 @@ static void show_snapshot(request_rec *r,
     char* n;
     if (!r ||!u ) {
 #ifdef LOGRC_DEBUG
-        fprintf(stderr,"[%d] NULL request_rec or log_slow_usage_t handed to show_snapshot",
+        fprintf(stderr,"[%d] NULL request_rec or log_slow_usage_t handed to show_snapshot\n",
             (int)getpid());
 #endif
         return;
