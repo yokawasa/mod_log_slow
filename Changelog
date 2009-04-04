@@ -1,3 +1,6 @@
+version 1.0.5 - Apr 4, 2009
+* add Apache1.3 version of module: mod_log_slow13.c
+
 version 1.0.4 - Feb 22, 2009
 * add "EOF" (\n) on fprintf format of debug message
 
