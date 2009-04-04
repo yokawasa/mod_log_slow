@@ -1,6 +1,6 @@
 /*
  * README
- * mod_log_slow.c - Logging Slow Request Module for Apache2.X
+ * mod_log_slow - Logging Slow Request Module for Apache1.3 and Apache2.X
  */
 
                      _     _                     _
