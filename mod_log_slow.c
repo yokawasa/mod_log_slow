@@ -137,7 +137,7 @@ static double get_time_elapsed( struct timeval *before, struct timeval *after )
     double a,b;
 
     if ( !before || !after || !timerisset(before) || !timerisset(after) ) {
-#ifdef LOGRC_DEBUG
+#ifdef LOGSLOW_DEBUG
         // this error messages may be output in every apache stop and start,
         // so put this only in debug mode
         fprintf(stderr, "[%d] NULL time handed to get_time_elapsed\n",
@@ -153,7 +153,7 @@ static double get_time_elapsed( struct timeval *before, struct timeval *after )
 static void set_snapshot( log_slow_usage_t *u )
 {
     if (!u) {
-#ifdef LOGRC_DEBUG
+#ifdef LOGSLOW_DEBUG
         fprintf(stderr, "[%d] NULL log_slow_usage_t handed to set_snapshot\n",
             (int)getpid());
 #endif
@@ -168,7 +168,7 @@ static void show_snapshot(request_rec *r,
 {
     char* n;
     if (!r ||!u ) {
-#ifdef LOGRC_DEBUG
+#ifdef LOGSLOW_DEBUG
         fprintf(stderr,"[%d] NULL request_rec or log_slow_usage_t handed to show_snapshot\n",
             (int)getpid());
 #endif
@@ -242,7 +242,7 @@ static int log_slow_post_read_request(request_rec *r)
     }
 
     set_snapshot(&usage_start);
-#ifdef LOGRC_DEBUG
+#ifdef LOGSLOW_DEBUG
     show_snapshot(r,&usage_start,"START");
 #endif
     return OK;
@@ -268,7 +268,7 @@ static int log_slow_log_transaction(request_rec *r)
 
     log_slow_usage_t usage_end;
     set_snapshot(&usage_end);
-#ifdef LOGRC_DEBUG
+#ifdef LOGSLOW_DEBUG
     show_snapshot(r, &usage_end, "END");
 #endif
     time_elapsed =
