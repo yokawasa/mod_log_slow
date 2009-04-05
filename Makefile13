@@ -27,7 +27,7 @@ install: all
 
 #   cleanup
 clean:
-	-rm -f mod_log_slow.o mod_log_slow.so
+	-rm -f mod_log_slow13.o mod_log_slow.so
 
 #   reload the module by installing and restarting Apache
 reload: install restart
