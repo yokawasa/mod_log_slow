@@ -85,6 +85,31 @@ o LogSlowFileName
     [note]
     In case of using pipe("|"), followed by the path to a program to receive the log information on its standard input.
 
+o LogSlowTimeFormat
+
+    Description: Set the time, in the form given by format, which should
+           be in strftime(3) format. The slow_log's log entries are written
+           in this format. If not set, the log entries are written in
+           Common Log Format(CLF) by default.
+    Syntax: LogSlowTimeFormat timeformat
+    Context: server config, virtual host
+    Status: Extension
+    Module: mod_log_slow
+
+    [example]
+    LogSlowTimeFormat  "[%Y-%m-%d %H:%M:%S]"
+    ->  [2009-06-24 00:09:44]
+
+o LogSlowBufferedLogs
+
+    Description: set "On" to enable buffered logs flush, "Off" to disable.
+           Default "Off". Of cource if buffered logs option is set "On",
+           slow_log is written delayed so as to decrease disk io and thus
+           to lower the load. Only apache2 module supports.
+    Syntax: LogSlowBufferedLogs On/Off
+    Context: server config, virtual host
+    Status: Extension
+    Module: mod_log_slow
 
 ====================================================================
 * Logging Format
@@ -103,11 +128,11 @@ ID will be used as the unique ID.
 
 2) Slow Log Format
 
-<Unique ID> @ <time> elapsed: <elapsed time> cpu: <cpu usrtime>(usr)/<cpu systime>(sys) pic: <PID> ip: <REMOTE_IP> host: <HOSTNAME> URI: <URI>
+<Unique ID> <time> elapsed: <elapsed time> cpu: <cpu usrtime>(usr)/<cpu systime>(sys) pic: <PID> ip: <REMOTE_IP> host: <HOSTNAME> reqinfo: <REQINFO>
 
 o <Unique ID>
     Description: the unique ID assigned for each log entry.
-o <time> (unixtime)
+o <time> (CLF or User Defined Format)
     Description: the time to occur the log entry.
 o <elapsed time> (sec)
     Description: the time took for the request processing.
@@ -121,11 +146,14 @@ o <REMOTE_IP>
     Description: the request's remote ip address.
 o <HOSTNAME>
     Description: the request's hostname.
-o <URI>
-    Description: the request uri.
+o <REQINFO>
+    Description: the request information string.
+    Format: <METHOD> <PATH> <PROTOCOL>
+    ex.  reqinfo: GET /wiki/index.html?foo=val1&bar=val2 HTTP/1.0
 
-ex.
-11e2:496b45e8:0 @ 1231767016 elapsed: 0.51 cpu: 0.00(usr)/0.00(sys) pid: 4578 ip: 10.0.2.2 host: localhost uri: /wiki/index.php
+log example)
+3f2b:4a40e871:0 [23/Jun/2009:23:36:33 +0900] elapsed: 0.15 cpu: 0.05(usr)/0.00(sys) pid: 16171 ip: 127.0.0.1 host: localhost:80 reqinfo: GET /wiki/index.html?foo=val1&bar=val2 HTTP/1.0
+
 
 3) Apache Note Info and CustomLog Format
 
@@ -158,7 +186,9 @@ LoadModule log_slow_module modules/mod_log_slow.so
 2) add directives below
 LogSlowEnabled On
 LogSlowLongRequestTime 100
-LogSlowFileName /path-to-log/slow_log
+LogSlowFileName  /path-to-log/slow_log
+LogSlowTimeFormat "[%Y-%m-%d %H:%M:%S]"
+LogSlowBufferedLogs On
 
 see also: sample.conf
 
