@@ -29,6 +29,8 @@
 #define MAX_LOG_SLOW_REQUEST     (1000*30)  //30sec
 #define MIN_LOG_SLOW_REQUEST     (0)
 #define DEFAULT_LOG_SLOW_REQUEST (1000*1)   //1sec
+#define LOGBUF_SIZE                (512)
+#define ALL_LOGBUF_INIT_ARRAY_SIZE (3)
 
 module MODULE_VAR_EXPORT log_slow_module;
 
@@ -38,16 +40,16 @@ typedef struct st_log_slow_usage {
 } log_slow_usage_t;
 
 typedef struct st_log_slow_conf {
-    int enabled;             /* engine is set to be on(1) or off(0) */
-    long long_request_time;  /* log resource consumption only on slow request in msec */
-    char *filename;    /* filename of slow log */
+    int enabled;               /* engine is set to be on(1) or off(0) */
+    long long_request_time;    /* log resource consumption only on slow request in msec */
+    char *filename;      /* filename of slow log */
+    char *timeformat;    /* time format of slow log */
     int fd;
 } log_slow_config;
 
 static APACHE_TLS next_id = 0;
 
 static log_slow_usage_t usage_start;
-
 
 static const char *set_enabled(cmd_parms *parms, void *mconfig, int arg)
 {
@@ -88,7 +90,7 @@ static const char *set_long_request_time(cmd_parms *parms,
     return NULL;
 }
 
-static const char *set_filename(cmd_parms *parms,
+static const char *set_file_name(cmd_parms *parms,
                                     void *mconfig, const char *arg)
 {
     log_slow_config *conf =
@@ -100,11 +102,50 @@ static const char *set_filename(cmd_parms *parms,
     return NULL;
 }
 
+static const char *set_time_format(cmd_parms *parms,
+                                    void *mconfig, const char *arg)
+{
+    log_slow_config *conf =
+        ap_get_module_config(parms->server->module_config, &log_slow_module);
+    if (!conf){
+        return "LogSlowModule: Failed to retrieve configuration for mod_log_slow";
+    }
+    conf->timeformat = (char*)arg;
+    return NULL;
+}
+
+/* code from mod_log_config */
+static const char *log_request_time(request_rec *r, char *a)
+{
+    int timz;
+    struct tm *t;
+    char tstr[MAX_STRING_LEN];
+
+    t = ap_get_gmtoff(&timz);
+
+    if (a && *a) {              /* Custom format */
+        strftime(tstr, MAX_STRING_LEN, a, t);
+    }
+    else {                      /* CLF format */
+        char sign = (timz < 0 ? '-' : '+');
+
+        if (timz < 0) {
+            timz = -timz;
+        }
+        ap_snprintf(tstr, sizeof(tstr), "[%02d/%s/%d:%02d:%02d:%02d %c%.2d%.2d]",
+                t->tm_mday, ap_month_snames[t->tm_mon], t->tm_year+1900,
+                t->tm_hour, t->tm_min, t->tm_sec,
+                sign, timz / 60, timz % 60);
+    }
+    return ap_pstrdup(r->pool, tstr);
+}
+
 void set_default(log_slow_config *conf) {
     if (conf) {
         conf->enabled = 0;
         conf->long_request_time = DEFAULT_LOG_SLOW_REQUEST;
         conf->filename= NULL;
+        conf->timeformat = NULL;
         conf->fd =  -1;
     }
 }
@@ -193,6 +234,7 @@ static int log_slow_log_transaction(request_rec *r)
     double time_elapsed,utime_elapsed,stime_elapsed;
     char* logbuf;
     char *id;
+    char *reqinfo;
     char *elapsed_s;
     //apr_size_t logsize;
     int logsize;
@@ -237,15 +279,23 @@ static int log_slow_log_transaction(request_rec *r)
 
     elapsed_s = (char*)ap_psprintf(r->pool, "%.2lf", time_elapsed);
 
+    reqinfo = ap_escape_logitem(r->pool,
+                 (r->parsed_uri.password) ? ap_pstrcat(r->pool, r->method, " ",
+                     ap_unparse_uri_components(r->pool, &r->parsed_uri, 0),
+                     r->assbackwards ? NULL : " ", r->protocol, NULL)
+                    : r->the_request
+                 );
+
     logbuf = (char*)ap_psprintf(r->pool,
-        "%s @ %d "
+        "%s %s "
         "elapsed: %.2lf cpu: %.2lf(usr)/%.2lf(sys) "
-        "pid: %d ip: %s host: %s uri: %s"
+        "pid: %d ip: %s host: %s:%u reqinfo: %s"
         "\n",
-        id, time(NULL),
+        id, log_request_time(r, (char*)conf->timeformat),
         time_elapsed, utime_elapsed, stime_elapsed,
-        (int)getpid(), r->connection->remote_ip, r->hostname, r->uri
-       );
+        (int)getpid(), r->connection->remote_ip, r->hostname,
+        r->server->port ? r->server->port : ap_default_port(r), reqinfo
+      );
 
     logsize = strlen(logbuf);
     bytes_written = write(conf->fd, logbuf, logsize);
@@ -323,7 +373,9 @@ static const command_rec log_slow_cmds[] =
     "set \"On\" to enable log_slow, \"Off\" to disable"},
     {"LogSlowLongRequestTime", set_long_request_time, NULL, RSRC_CONF, TAKE1,
     "set the limit of request handling time in millisecond. Default \"0\""},
-    {"LogSlowFileName", set_filename, NULL, RSRC_CONF, TAKE1,
+    {"LogSlowFileName", set_file_name, NULL, RSRC_CONF, TAKE1,
+    "set the filename of the slow log"},
+    {"LogSlowTimeFormat", set_time_format, NULL, RSRC_CONF, TAKE1,
     "set the filename of the slow log"},
     {NULL}
 };
