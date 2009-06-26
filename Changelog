@@ -1,3 +1,15 @@
+version 1.0.6 - Jun 23, 2009
+* modified slow_log format:
+ - host info: hostname -> hostname:port
+ - uri info: path -> reqinfo
+  reqinfo = <METHOD> <PATH> <PROTOCOL>
+ - time format: unixtime -> CLF or user defined format
+* add LogSlowTimeFormat Directive to support
+ - user defined time format of slow_log.
+* add LogSlowBufferedLogs Directive to support
+ - buffered log flush for better performance.
+ (Only apache2 module supports this directive)
+
 version 1.0.5 - Apr 4, 2009
 * add Apache1.3 version of module: mod_log_slow13.c
 
