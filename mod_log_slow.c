@@ -86,13 +86,13 @@ static const char *set_long_request_time(cmd_parms *parms,
     if (val < MIN_LOG_SLOW_REQUEST ) {
         ap_log_error(APLOG_MARK, APLOG_STARTUP, 0, NULL,
                 "LogSlowLongRequestTime of %ld must be greater than %ld",
-                val, MIN_LOG_SLOW_REQUEST);
+                val, (long)MIN_LOG_SLOW_REQUEST);
         return "LogSlowModule: Wrong param: LogSlowLongRequestTime";
     }
     if (val > MAX_LOG_SLOW_REQUEST ) {
         ap_log_error(APLOG_MARK, APLOG_STARTUP, 0, NULL,
                 "LogSlowLongRequestTime of %ld must not exceed %ld",
-                val, MAX_LOG_SLOW_REQUEST);
+                val, (long)MAX_LOG_SLOW_REQUEST);
         return "LogSlowModule: Wrong param: LogSlowLongRequestTime";
     }
 
