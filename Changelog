@@ -1,3 +1,6 @@
+version 1.0.7 - Dec 23, 2012
+* fixup GCC compile warnings
+
 version 1.0.6 - Jun 23, 2009
 * modified slow_log format:
  - host info: hostname -> hostname:port
