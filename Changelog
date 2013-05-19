@@ -1,3 +1,8 @@
+version 1.0.8 - May 20, 2013
+* changes to support Apache2.4
+ - fixup compile errors which are caused by the chnage of 'conn_rec' struct member
+ - fixup GCC compile warnings 
+
 version 1.0.7 - Dec 23, 2012
 * fixup GCC compile warnings
 
