@@ -22,13 +22,17 @@
 #include "http_protocol.h"
 #include "http_log.h"      // ap_log_rerror
 #include "ap_config.h"
+#include "util_time.h"
 #include "ap_mpm.h"        // AP_MPMQ_MAX_THREADS
+#include "ap_mmn.h"        // AP_MODULE_MAGIC_AT_LEAST
 #include "apr_strings.h"
 #include "apr_atomic.h"
 #include "apr_anylock.h"
 #include "apr_errno.h"
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <unistd.h>        // for getpid() 
+
 
 #define MAX_LOG_SLOW_REQUEST       (1000*30)  //30sec
 #define MIN_LOG_SLOW_REQUEST       (0)
@@ -169,7 +173,7 @@ static cached_request_time request_time_cache[TIME_CACHE_SIZE];
 static const char *log_request_time(request_rec *r, char *a)
 {
     apr_time_exp_t xt;
-
+    apr_time_t request_time = r->request_time;
     /* ###  I think getting the time again at the end of the request
      * just for logging is dumb.  i know it's "required" for CLF.
      * folks writing log parsing tools don't realise that out of order
@@ -187,7 +191,7 @@ static const char *log_request_time(request_rec *r, char *a)
          * for the custom format in a separate function.  (That's why
          * log_request_time_custom is not inlined right here.)
          */
-        ap_explode_recent_localtime(&xt, r->request_time);
+        ap_explode_recent_localtime(&xt, request_time);
         return log_request_time_custom(r, a, &xt);
     }
     else {                      /* CLF format */
@@ -197,7 +201,6 @@ static const char *log_request_time(request_rec *r, char *a)
          */
         cached_request_time* cached_time = apr_palloc(r->pool,
                                                       sizeof(*cached_time));
-        apr_time_t request_time = r->request_time;
         unsigned t_seconds = (unsigned)apr_time_sec(request_time);
         unsigned i = t_seconds & TIME_CACHE_MASK;
         *cached_time = request_time_cache[i];
@@ -503,6 +506,7 @@ static int log_slow_log_transaction(request_rec *r)
     char *id;
     char *reqinfo;
     char *elapsed_s;
+    char *remoteip;
     apr_size_t logsize;
     apr_status_t rv;
     conf = ap_get_module_config(r->server->module_config, &log_slow_module);
@@ -540,6 +544,12 @@ static int log_slow_log_transaction(request_rec *r)
 
     elapsed_s = (char*)apr_psprintf(r->pool, "%.2lf", time_elapsed);
 
+#if AP_MODULE_MAGIC_AT_LEAST(20111130,0)
+    remoteip = r->connection->client_ip;
+#else
+    remoteip = r->connection->remote_ip;
+#endif
+
     reqinfo = ap_escape_logitem(r->pool,
                              (r->parsed_uri.password)
                                ? apr_pstrcat(r->pool, r->method, " ",
@@ -556,7 +566,7 @@ static int log_slow_log_transaction(request_rec *r)
            "\n",
            id, log_request_time(r, (char*)conf->timeformat),
            time_elapsed, utime_elapsed, stime_elapsed,
-           (int)getpid(), r->connection->remote_ip, r->hostname,
+           (int)getpid(), remoteip, r->hostname,
            r->server->port ? r->server->port : ap_default_port(r), reqinfo
         );
 
